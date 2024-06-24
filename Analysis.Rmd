@@ -1,0 +1,1262 @@
+---
+title: "Accelerometers"
+author: "Giuseppa Cefalu"
+date: "2024-05-20"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r, import , echo = FALSE, include = FALSE }
+## IMPORT LIBRARIES
+
+suppressWarnings(library(knitr))
+
+suppressWarnings(library(caret))
+
+suppressWarnings(library(dplyr))
+
+suppressWarnings(library(rpart))
+
+suppressWarnings(library(rattle))
+
+suppressWarnings(library(pROC))
+
+suppressWarnings(library(ConfusionTableR))
+
+suppressWarnings(library(randomForest))
+
+suppressWarnings(library(ggplot2))
+
+suppressWarnings(library(corrplot))
+
+suppressWarnings(library(caretEnsemble))
+
+
+```
+
+```{r, files, echo = FALSE }
+
+# READ DATA FILES
+training <- read.csv("https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv")
+testing <- read.csv("https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv")
+
+```
+
+```{r, data, echo = FALSE, include = FALSE }
+
+# TAKE A LOOK AT THE DATA
+
+print(head(training))
+
+print(head(testing))
+
+```
+
+```{r, empty, echo = FALSE, include = FALSE }
+
+# CONVERT THE EMPTY CELLS TO NA
+
+training[training == ""] <- NA
+
+print(training)
+
+testing[testing == ""] <- NA
+
+print(testing)
+
+
+```
+
+INTRODUCTION
+
+In order to build a model for the data, I tested several models: “knn”, “tree”, “random forest”, “lda”, linear svm, radial svm, and “lda2”. Linear svm confusion excluded from consideration due to the large ammount of time taken by the algorithm to complete. The rest of the models were tested using a validation set and a test set, and the choice of model was based on accuracy, kappa, confusion matrix, statistics by class, and the ROC curve. Additionally, I ploted the distributions predicted by the models for the validation and test sets. I could observe that most of the models predicted a very similar distribution for the training set and for the validation set, but they predicted a very diffferent one for the testing set. That indicates, in the case of the best models, that the models are fitted to the data. Also, I checked the performance of the algorithms by using the resample package. This resulted in model “knn” being the best which coincides with my observations?
+
+DATA PREPROCESSING
+
+Before the models were built, a correlation calculation of the data sets was performed to look for collinearities. A few variables were eliminated from the data sets due to high correlation (“> 8.0”).
+
+ZERO AND NEAR ZERO VARIABLES
+
+The data sets were tested for zero or near zero variability variables and the identified variables were removed from the data sets. Without removing the zero or near zero variability variables, the “tree” algorithm brakes.
+
+SAMPLE SIZE
+
+Not only the distribution of the test set was very different, but also the sample size, - the sample size of the test set was much smaller than the sample size of the training and validation sets.
+This led me to conclude that the model predictions are affect by the size of the data sets, since being the testing set such a small set, its distribution cannot include all the population frequencies variability and therefore, does not represent the population. A larger data set is need to build the models so that they can generalize better to the population.
+
+```{r, splitting, echo = FALSE }
+
+# CREATE SPLITTING INDEX
+
+inTrain<-createDataPartition(y=training$classe,p=0.6,list=FALSE)
+
+```
+
+```{r, nona, echo = FALSE, include = FALSE }
+
+#REMOVE COLUMNS WITH NA
+ 
+training <- training[ , colSums(is.na(training))==0]
+
+```
+
+```{r, training, echo = FALSE, include = FALSE}
+
+print(training)
+
+```
+
+```{r, testing1, echo = FALSE }
+
+testing <- testing[ , colSums(is.na(testing))==0]
+
+```
+
+```{r, testing2, echo = FALSE, include = FALSE }
+
+print(testing)
+
+```
+
+```{r, training2, echo = FALSE, include = FALSE }
+
+# TRAINING SET
+
+training2 <- training[inTrain,]
+
+print(head(training2))
+
+```
+
+```{r, validation, echo = FALSE,include = FALSE }
+
+# TESTING SET
+
+validation <- training[-inTrain ,]
+
+print(head(validation))
+
+```
+
+```{r, remove, echo = FALSE }
+
+# REMOVE UNNECESSARY VARIABLES
+
+training2 <- subset(training2, select = c(-X, -user_name, -raw_timestamp_part_1, -raw_timestamp_part_2,   -cvtd_timestamp ) )
+
+validation <- subset(validation, select = c(-X, -user_name, -raw_timestamp_part_1, -raw_timestamp_part_2,   -cvtd_timestamp ) )
+
+testing <- subset(testing, select = c(-X, -user_name, -raw_timestamp_part_1, -raw_timestamp_part_2,   -cvtd_timestamp, -problem_id) )
+
+```
+
+```{r, trainingdim, echo = FALSE, include = FALSE}
+
+# DATA SET SIZE
+
+print(dim(training2))
+
+```
+
+```{r, validationdim, echo = FALSE, include = FALSE }
+
+# DATA SET SIZE
+
+print(dim(validation))
+
+```
+
+```{r, testindim, echo = FALSE, include = FALSE }
+
+print(dim(testing))
+
+```
+
+```{r, copy, echo = FALSE }
+
+# COPY DATEFRAME TO ANOTHER DATAFRAME
+
+# Make a copy of the dataframe to convert to numeric to carry out correlation. The "cor" function only takes numeric values as input.
+
+training2_1 <- data.frame(training2)
+
+validation2_1 <- data.frame(validation)
+
+```
+
+```{r, tonumeric, echo = FALSE}
+
+# CONVERT DATAFRAME TO NUMERIC
+
+# Convert dataframe to numeric to test for collinearity using the function "cor". I use suppressWarnings to avoid displying a warning because the
+
+# factor variable "classe" is converted to NA. A factor variablle has to be converted to character before it is converted to numeric.
+
+suppressWarnings(training2_1[] <- lapply(training2_1, as.numeric))
+
+suppressWarnings(validation2_1[] <- lapply(validation2_1, as.numeric))
+
+```
+
+```{r, datatypes, echo = FALSE, include = FALSE}
+
+# DISPLAY THE DATA TYPE OF THE COLUMNS
+
+print(sapply(training2_1, class))
+
+print(sapply(validation2_1, class))
+
+
+```
+
+```{r, removeclasse, echo = FALSE, include = FALSE }
+
+# REMOVE THE COLUMN CLASSE
+
+# The column class is removed to eliminate NAS introduced by coercion of the variable classe.
+
+training2_1 <- training2_1 [1: ncol(training2_1)-1 ]
+
+print(training2_1)
+
+```
+
+
+```{r, multicolinearity, echo = FALSE, include = FALSE }
+ 
+# MULTICOLLINEARITY
+
+# Multi-collinearity will not be a problem for certain models such as random forest or decision tree.
+
+# For example, if we have two identical columns, decision tree / random forest will automatically "drop" 
+
+# one column at each split. 
+
+# CALCULATE CORRELATION
+
+cor.cor <- cor(training2_1)
+
+# DISPLAY CORRELATION NUMEREIC VALUES
+
+print(cor.cor)
+
+```
+
+```{r Correlation, fig.show='hide', echo = FALSE }
+
+# PLOT CORRELATION
+
+corrplot(cor.cor)
+
+```
+
+```{r, collinearity2, echo = FALSE }
+
+# ELIMINATE VARIABLES SHOWING COLLINEARITY
+
+# Eliminated variables with correlation => 8.0
+
+training2 <- subset(training2, select = c(-total_accel_belt, -gyros_dumbbell_z))   
+
+validation <- subset(validation, select = c(-total_accel_belt, -gyros_dumbbell_z))
+
+testing <- subset(testing, select = c(-total_accel_belt, -gyros_dumbbell_z))  
+
+
+```
+
+
+```{r, nearzero, echo = FALSE, include = FALSE }
+
+# Columns that are very imbalanced (where nearly all their values are just one value) are said to have near-zero variance. Columns that have just
+
+#one value for all rows are said to have zero variance. Zero variance columns can cause some algorithms to crash and a concern for near-zero
+
+# variance columns is that when we do resampling we could easily end up with a fold or resample where our near-zero variance becomes zero just
+
+#through bad luck. We can check for zero and near-zero
+
+# variance features using caret's handy nearZeroVar() function:
+
+nzv <- nearZeroVar(training2, saveMetrics= T)
+
+print(nzv)
+
+nzv <- nearZeroVar(validation, saveMetrics= T)
+
+print(nzv)
+
+nzv <- nzv <- nearZeroVar(testing, saveMetrics= T)
+
+print(nzv)
+
+
+```
+
+DATA DISTRIBUTIONS
+
+To get an idea of the data distribution of the different sets “training”, “validation”, and “testing” I performed a summary statistics of the 3 data sets. The data distributions of the training and validation set were very similar, while the diatrbution of the testing set was very different from the data distribution of the other 2 sets. Due to space constrains, only the plots are shown here. I could not plot the testing set data distribution because the classification variable is missing from That file.
+
+VALIDATION SET
+
+```{r, oneplot, echo = FALSE}
+
+# PLOT THE DISTRIBUTION OF THE VARIABLE "CLASSE" in the training set
+
+p <- ggplot(training2, aes(x = classe, fill = classe)) +
+
+  geom_bar()
+  
+print(p)
+
+
+```
+
+TEST SET
+
+```{r, secondplot, echo = FALSE}
+
+# PLOT THE DISTRIBUTION OF THE VARIABLE "CLASSE" in the vatidation set
+
+p2 <- ggplot(validation, aes(x = classe, fill = classe)) +
+
+  geom_bar()
+  
+print(p2)
+
+
+```
+
+```{r, summary, echo = FALSE, include = FALSE }
+# SUMMARY OF THE DISTRIBUTIONS
+
+print(summary(training2))
+
+print(summary(validation))
+
+print(summary(testing))
+
+```
+
+KNN MODEL
+
+For this model, 2 values are passed in our “preProcess” parameter “center” & “scale”. These two help for centering and scaling the data. After preProcessing 
+these convert our training data with mean value as approximately “0” and standard deviation as “1”. distance based algorithms are affected by the 
+scale of the variables. Number is the number of folds. repeats = For repeated k-fold cross-validation only: the number of complete sets of folds 
+to compute. Three separate 10 cross validaton are done here.
+
+TUNING PARAMETERS
+
+The “tuneLength” parameter holds an integer value. This is for tuning our  algorithm. TuneLength is equivalent to tuneGrid. It indicates the number of values to use for each validation and is setup automatically.One method of searching for the 'optimal' model parameters is using random selection. In this case the tuneLength
+argument is used to control the number of combinations generated by this random tuning parameter search.
+    
+    tuneLength = 4
+    
+However, sometimes the defaults are not the most sensible given the nature of the data. The tuneGrid argument allows the user to specify a custom grid of tuning parameters as opposed to simply using what exists implicitly. In the grid, each algorithm parameter can be specified as a vector of possible values.
+
+The choice of parameters was made by the model based on measures of “accuracy” and “Kappa”. Below is a list of the parameters tested by the model and the corresponding measures of accurcy based on which K was selected. The k value in the k-NN algorithm defines how many neighbors will be checked to determine the classification of a specific query point. For example, if k=1, the instance will be assigned to the same class as its single nearest neighbor.
+
+```{r, model1, echo = FALSE }
+
+# KNN MODEL REPRODUCIBILITY
+
+set.seed(1234)
+
+training2 <- training2[ , colSums(is.na(training2))==0]
+
+trcontrol <- trainControl(method = "repeatedcv", number = 10, repeats = 3)
+
+model_knn <- train(classe ~., data = training2, method = "knn",
+                  
+                   trControl=trcontrol,
+                  
+                   preProcess = c("center", "scale"),
+                  
+                   #tuneLength = 4,
+                  
+                   metric = "Accuracy",
+                   
+                   tuneGrid = data.frame(k = seq(1, 10,by = 1))
+)
+
+
+```
+
+
+ANALYSIS OF ACCURACY AND KAPPA
+
+The ratio of correct predictions to the total number of predictions (accuracy) is quite high, but 
+when the data has more than 2 classes the accuracy value might not be predicting all the classes 
+equally, or some classes are being neglected by the model. If such is the case, the accuracy value 
+might be construed by predicting the most common class value.
+The measure Kappa is like accuracy. This is useful when there is an imbalance in the data during 
+the split. For example, 80-30
+The confusion matrix offers more detailed analysis since it summarizes a count of the correct and 
+incorrect predictions made by the model by class. 
+https://machinelearningmastery.com/confusion-matrix-machine- learning/
+
+
+```{r, thirdplot, echo = FALSE }
+
+# PLOT MODEL KNN
+
+trellis.par.set(caretTheme())
+
+plot(model_knn)
+
+trellis.par.set(caretTheme())
+
+plot(model_knn, metric = "Kappa")
+
+
+```
+
+
+```{r, finalmodel, echo = FALSE }
+
+# PRINT THE RESULTS OF THE MODEL
+
+print(model_knn)
+
+print(model_knn$finalModel)
+
+
+``` 
+
+STATISTICS
+
+The value of Kappa is selected with a very small p-value and within a 95% confidence.
+
+According to the values of precision and sensitivity, the model’s ability to predict classes 
+correctly is remarkably high, and the values of prevalence are similar across all the classes, 
+which indicates that there are no imbalances in the data.
+
+THE DISTRIBUTION PREDICTED BY THE MODEL IS VERY SIMILAR TO THE DISTRIBUTION OF THE DATA IN BOTH THE TRAINING SET AND VALIDATION
+
+MODEL PREDICTIONS (Validation and Test)
+The model predictions distribution is very similar to the real distribution of the data set.
+
+
+```{r, distributions, echo = FALSE}
+
+model_knn_prediction <- predict(model_knn , newdata = validation, type = "raw" )
+
+plot(model_knn_prediction, col = c("blue", "violet", "green", "pink", "magenta"))
+
+predictions <- cbind(data.frame(train_preds= model_knn_prediction, validation$classe))
+
+names(predictions)
+
+model_knn_prediction <- predict(model_knn , newdata = validation, type = "prob" )
+
+model_knn_prediction_test <- predict(model_knn, newdata = testing, type = "raw")
+
+print(model_knn_prediction_test)
+
+#plot(model_knn_prediction_test, col = c("blue", "sienna2", "green", "pink", "magenta"))
+
+
+```
+
+CONFUSION MATRIX
+The confusion matrix shows some misclassifications.
+
+
+```{r, table, echo = FALSE }
+
+# CREATE CONFUSION TABLE AND DISPLAY STATISTICS
+
+cm <- ConfusionTableR::multi_class_cm(factor(predictions$train_preds), factor(predictions$validation.classe))
+
+# CREATE THE RAW LEVEL OUTPUT
+
+cm_rl <- cm$record_level_cm
+
+#print(cm_rl)
+
+# EXPOSE THE ORIGINAL CONFUSION MATRIX LIST
+
+cm_orig <- cm$confusion_matrix
+
+print(cm_orig)
+
+
+```
+
+ROC Curve
+
+The ROC curve displays sensitivity versus specificity values as it traces off all different threshold points (0 – 1). We can compare this curve to other ROC curves and see which model performs better. AUC represents a degree or measure of separability. It tells us how much the model is capable of distinguishing between classes. Higher the AUC, better the model is at predicting the probability of class A higher than the probability of class B.
+
+The graph below indicates that a threshold value of 0.33, the number of correctly classified true values, is almost equal to the number of correctly classified false values. The area under the curve indicates that this model is good at predicting true and false values.
+
+The Diagonal line represents the threshold (50%) where the true positive rate and false positive rate are equal. In the case of the graph displayed below, the false positive rate would start at the right end of the x- axis and would end at the left end of the x- axis. The base case represents the threshold at which the model is equally likely to predict true or false.
+
+A model which predictions are 100% right produces an AUC of 1.0. The model has chosen a parameter that produces a sensitivity value of 1.0. The 
+ model overfits. The original distribution of the data and the distribution of the data after the prediction with the validation set are identical. This algorithm predicts very well as long as the distribution of the data in training and test set is the same.
+
+
+```{r, plot4, echo = FALSE }
+# ROC CURVE AREA UNDER THE CURVE
+
+
+auc <- multiclass.roc(validation$classe, model_knn_prediction, plot = FALSE, print.thres=TRUE, col="blue")
+
+rocobj <- roc(validation$classe, model_knn_prediction[, 2])
+
+#create ROC plot
+
+ggroc(rocobj, colour = 'steelblue', linetype = 1, size = 1) +
+geom_segment(aes(x = 1, xend = 0, y = 0, yend = 1))
+
+# Cannot do the ROC curve using the test set because this set lacks the variable "classe".
+
+# PRINT MODEL PREDICTION PROBABILITIES
+
+print(auc)
+
+```
+
+PREDICTIONS MADE BY THE MODEL USNNG THE TEST SET
+
+```{r predicttest, echo = FALSE }
+
+# PREDICT USING THE MODEL TO TEST THE MODEL
+
+model_knn_prediction_test <- predict(model_knn, newdata = testing, type = "raw")
+
+print(model_knn_prediction_test)
+
+
+```
+
+
+```{r, echo = FALSE}
+
+# PLOT THE MODEL DISTRIBUTION OF THE VARIABLE "CLASSE"
+
+plot(model_knn_prediction_test, col = c("blue", "sienna2", "green", "pink", "magenta"))
+
+```
+
+```{r, predicttest2, echo = FALSE, include = FALSE}
+
+model_knn_prediction_test <- predict(model_knn, newdata = testing, type = "prob")
+
+print(model_knn_prediction_test)
+
+```
+
+
+```{r, append, echo = FALSE }
+
+predict(model_knn, newdata = testing, type = "prob") %>%
+
+  mutate('class'=names(.)[apply(., 1, which.max)])
+
+```
+
+DECISION TREE
+Cart
+The optimal complexity value (number of nodes) is decided by the Tree algorithm based on Kappa which value is higher that the accuracy value. These values are very small compared to the ones observed for the KNN algorithm
+
+If we look at the summary of the model, it shows the statistics for all splits. The printcp and plotcp functions provide the cross-validation error for each nsplit and can be used to prune the tree. The one with least cross-validated error
+(xerror) is the optimal value of CP given by the printcp() function.
+
+```{r, tree, echo = FALSE }
+
+# END KNN START CLASSIFICATION TREE
+set.seed(1234)
+ctrl <- trainControl(method = "repeatedcv",
+                     number = 5,
+                     repeats = 5) 
+                    # previously repeats = 3 amd 4. Changing the number of repeats does not improve the model
+
+modelTree <- train(classe ~., method = "rpart", data = training2, trControl = ctrl )
+print(modelTree)
+
+```
+
+
+PLOT OF COMPLEXITY VERSUS KAPPA
+
+The value of Kappa decreases as the complexity (number of nodes) increases.
+
+
+```{r, plot6, echo = FALSE}
+
+trellis.par.set(caretTheme())
+
+plot(modelTree)
+
+trellis.par.set(caretTheme())
+
+plot(modelTree, metric = "Kappa")
+
+```
+
+```{r, plotfancy, echo = FALSE }
+
+# PLOT TREE
+
+fancyRpartPlot(modelTree$finalModel)
+
+```
+
+
+PREDICTED DISTRIBUTION (Validation Set)
+
+This model does not seem to predict the real distribution of the validation set as was seen with the KNN model, which seems to be related to the values of Kappa and Accuracy obtained previously.
+
+
+```{r, validationpredict, echo = FALSE, include = FALSE}
+
+# PREDICTION WITH VALIDATION SET
+
+tree_predict_validation <- predict(modelTree, newdata = validation)
+
+predictions <- cbind(data.frame(train_preds= tree_predict_validation, validation$classe))
+
+names(predictions)
+
+
+```
+
+```{r, pkot6, fig,width = 6, fig.height = 8, fig.alignment = 'center', echo = FALSE}
+
+plot(tree_predict_validation, col = c("blue", "violet", "green", "pink", "magenta"))
+
+# PREDICTION WITH TEST SET
+tree_predict_test <- predict(modelTree, newdata = testing, type = "prob")
+
+tree_predict_test_noprob <- predict(modelTree, newdata = testing)
+
+plot(tree_predict_test_noprob, col = c("blue", "violet", "green", "pink", "magenta"))
+
+```
+
+
+STATISTICS
+
+The value of Kappa is very small withing a 95% confident interval. According to the values of precision and sensitivity, the model’s ability to predict classes 
+correctly is very low, and the values of prevalence are similar across all the classes, which 
+indicates that there are no imbalances in the data.
+
+CONFUSION MATRIX
+
+The confusion matrix shows many classification error and this agrees with the values of “accuracy 
+and Kappa”, therefore I can conclude that this is not a reliable model for the data.
+
+
+```{r, tableconfusion, echo = FALSE}
+
+cm <- ConfusionTableR::multi_class_cm(factor(predictions$train_preds), factor(predictions$validation.classe))
+
+#print(cm)
+
+# Create the row level output
+
+cm_rl <- cm$record_level_cm
+
+#print(cm_rl)
+
+#Expose the original confusion matrix list
+
+cm_orig <- cm$confusion_matrix
+
+print(cm_orig)
+
+```
+
+ROC Curve
+
+The ROC curve displays sensitivity versus specificity values as it traces off all different 
+threshold points (0 – 1). We can compare this curve to other ROC curves and see which model 
+performs better.
+The graph below indicates that a threshold value of 0.591, the number of correctly classified true 
+values, is almost equal to the number of correctly classified false values. The area under the 
+curve indicates that this model is not good at predicting true and false values.
+
+```{r, treepredictvalidation, echo = FALSE}
+
+tree_predict_validation <- predict(modelTree, newdata = validation, type = "prob")
+# ROC CURVE TO ANALYZE THE STRENGTH OF THE CLASSIFIER the
+# AUC provides an aggregate measure of performance across all possible classification thresholds.
+# One way of interpreting AUC is as the probability that the model ranks a random positive example
+# more highly than a random negative example.
+auc <- multiclass.roc(validation$classe, tree_predict_validation, plot = FALSE, print.thres=TRUE, col="blue" )
+
+#print(auc)
+
+rocobj <- roc(validation$classe, tree_predict_validation[, 2])
+
+#create ROC plot
+ggroc(rocobj, colour = 'steelblue', linetype = 1, size = 1) +
+geom_segment(aes(x = 1, xend = 0, y = 0, yend = 1))
+
+```
+
+RANDOM FOREST
+
+
+Using cross validation will allow to you avoid overfitting. Choosing your best model based on CV results will lead to a model that hasn't overfit,
+
+KAPPA VERSUS RANDOMLY SELECTED PREDICTORS
+
+ If splitting a node generates two nodes for which one is smaller than node size then the node is not split, and it becomes a leaf node.
+mtry: Number of variables randomly sampled as candidates at each split. ntree: Number of trees to grow.
+
+The plot below demonstrates that the value of kappa increases as the number of randomly selected predictors increases.
+
+
+```{r, forest, echo = FALSE}
+
+  set.seed(1234)
+
+trcl <- trainControl(method = "repeatedcv",number = 10) 
+
+
+tunegrid <- expand.grid(.mtry=c(1:15))
+
+mtry = c(1:45)  # Later on I chose the best value for the modle.
+
+model_tree_forest<-train(classe ~.,method="rf",data=training2, trControl=trcl, maxnodes = 9, nodesize = 8, ntree = 10, tuneGrid = 
+
+expand.grid(.mtry=mtry))
+
+print(model_tree_forest)
+
+
+```
+
+ACCURACY VERSUS NUMBER OF RANDOMMLY SELECTED PREDICTORS
+
+The plot below demonstrates that the accuracy value increases as the number of randomly selected 
+predictors increases.
+
+FINAL RANDOM FOREST MODEL
+
+Plotting the final model will plot the error rates on the training and test data sets as the number of trees are increased.
+
+For the final model, I chose node size 8, number of nodes 9 and number of trees 10. This selection was based on the amount of error versus the number of trees. This error stabilizes for the parameters above as shown in the plot below.NODESIZE 8 – MAXNODES 9 I CHOSE THIS ONE – NTREES 10
+
+
+```{r,forestfig, fig.width = 10, fig.height = 14, fig.alignment = 'center', echo = FALSE}
+
+
+
+plot(model_tree_forest$finalModel)
+
+plot(model_tree_forest)
+
+modelLookup('rf') 
+
+
+```
+
+RESULTS
+
+The optimal model was selected based on the value of accuracy for th parameter mtry value 
+selection. The parameter mtry determines how many variables will be included in the first split. 
+The largest value of accuracy was used to select the mtry value. This was mtry = 39.
+
+VARIABLE IMPORTANCE
+
+Variable importance is calculated by considering the average increase in node purity a split on that variable causes. Variables whose splits cause larger increases in node purity are more important. The first split typically causes the largest increase in node purity. I am assuming that min depth in this package means what is the first time this variable is used to split the tree. If this is the case it makes sense that more important variables have lower min depth values. The splits that causes the larger increases in purity happen early and so the important variables are split on early.
+
+I chose to display only the 10 most important variables. Variable importance is chosen based on the value of the gene coefficient. The Gini Coefficient is measures in terms of the homogeneity of nodes in the random forest. The Mean Decrease accuracy and the mean decrease Gini Coefficient are directly proportional to each other. When a tree is built, the decision about which variable to used to split the data at each node uses the calculation of the Gini impurity. For each variable, the sum of the Gini decrease across every tree of the forest is accumulated every time that a variable is used to split a nodeVariable importance helps to determine which . features are more relevant for the splits.
+
+```{r, varimportance, fig.width = 10, fig.heighr = 10, fig.alignment = 'center', echo = FALSE }
+
+
+
+variable_importance <- varImp(model_tree_forest, scale = FALSE)
+
+#print(variable_importance)
+
+plot(variable_importance, top = 10)
+
+
+```
+
+
+```{r, forestpredict, echo = FALSE}
+
+# PREDICTIONS WITTH VALIDATION SET
+
+model_tree_forest_predict <- predict(model_tree_forest, newdata = validation, type = "raw")
+
+predictions <- cbind(data.frame(train_preds= model_tree_forest_predict, validation$classe))
+
+print(names(predictions))
+
+```
+
+CONFUSION MATRIX AND STATISTICS
+
+Confusion matrix demonstrates that there are many misclassifications, and the values or “Accuracy” 
+and “Kappa” are very small; The values of accuracy are within a very narrow confidence interval of 
+values for a small p value which for the high probability of that accuracy value.
+Therefore we cannot trust the predictons made by this model. Sensitivity. The values of precision 
+and sensitivity indicate that the model’s ability to predict classes correctly is very low. The 
+values of prevalence are similar across all the classes, which indicates that there are no 
+imbalances in the data.
+
+
+```{r , anothertable, fig.width = 6, figh.height = 10, fig.alignment = 'center', echo = FALSE }
+
+ cm <- ConfusionTableR::multi_class_cm(factor(predictions$train_preds), factor(predictions$validation.classe))
+
+# Create the row level output
+
+cm_rl <- cm$record_level_cm
+
+#print(cm_rl)
+
+#Expose the original confusion matrix list
+
+cm_orig <- cm$confusion_matrix
+
+print(cm_orig)
+
+model_tree_forest_predict <- predict(model_tree_forest, newdata = validation, type = "prob")
+
+auc <- multiclass.roc(validation$classe, model_tree_forest_predict, plot = FALSE, print.thres=TRUE, col="blue" )
+
+#print(auc)
+
+model_tree_forest_predict_test <- predict(model_tree_forest, newdata = testing, type = "raw")
+
+print(model_tree_forest_predict_test)
+
+```
+
+ROC Curve
+
+The roc curve indicates that a threshold value of 0.459, the number of correctly classified true 
+values, is almost equal to the number of correctly classified false values. The area under the 
+curve indicates that this model is not good at predicting true and false values.
+
+
+```{r, theroc, fig.width = 6, fig.height = 8, fig.alignment = 'center', echo = TRUE }
+
+
+rocobj <- roc(validation$classe, model_tree_forest_predict[, 2])
+
+#create ROC plot
+
+ggroc(rocobj, colour = 'steelblue', linetype = 1, size = 1) +
+
+geom_segment(aes(x = 1, xend = 0, y = 0, yend = 1))
+
+```
+
+LDA MODEL
+
+One of the key assumptions of linear discriminant analysis is that each of the predictor variables have the same variance. An easy way to assure that this assumption is met is to scale each variable such that it has a mean of 0 and a standard deviation of 1. This model has no parameters to plot.
+
+RESULTS
+
+The model selects 4 discriminant functions
+
+```{r, ldamodel , echo = FALSE}
+
+set.seed(4789)
+
+# APPLY CONTROL PARAMETERs
+ctrl <- trainControl(method = "repeatedcv",
+                    number = 5, 
+                    repeats = 5,
+)
+
+
+model_lda <- train(classe ~.,method="lda",data=training2, trControl=ctrl, preProcess = c("center", "scale"), metric = "accuracy", type = "prob")
+
+print(model_lda)
+
+print(model_lda$finalModel)
+
+
+``` 
+
+MODEL [REDICTIONS]
+
+```{r, ldaplot, fig.with = 8, fig.height = 10, fig.alignment = 'center', echo = FALSE}
+
+validation_lda <- predict(model_lda,validation,type="raw")
+
+plot(validation_lda,  col = c("blue", "violet", "green", "pink", "magenta"))
+
+# CONVERT DATA TO CREATE DATA FRAME FOR CONFUSION MATRIX
+
+validation_lda = data.frame(validation_lda)
+
+#str(validation_lda)
+
+validation_class = as.factor(validation$classe)
+
+validation_class = data.frame(validation_class)
+
+str(validation_class)
+
+```
+
+MODEL PREDICTIONS WITH VALIDATION SET
+
+```{r, combine, echo = FALSE}
+
+# MODEL PREDICTIONS AND CLASSIFICATION VARIABLE FROM VALIDATION SET
+
+predictions <- cbind(validation_lda, validation_class)
+
+#print(predictions)
+
+dim(predictions)
+
+names(predictions)
+
+```
+
+CONFUSION MATRIX AND STATISTICS
+
+The confusion matrix has many misclassifications and the values of “Accuracy” and “Kappa” are 
+small. Confusion matrix demonstrates that there are many misclassifications. The values of accuracy 
+are within a very narrow confidence interval of probabilities for a very small p value. Therefore 
+we cannot trust the predictons made by this model.
+Sensitivity. The values of precision and sensitivity indicate that the model’s ability to predict 
+classes correctly is very low. The values of prevalence are similar across all the classes, which 
+indicates that there are no imbalances in the data.
+
+
+```{r, ldaprediction, echo = FALSE}
+
+# CONFUSION MATRIX
+
+cm <- ConfusionTableR::multi_class_cm(predictions$validation_lda, predictions$validation_class)
+
+#print(cm)
+
+# Create the row level output
+
+cm_rl <- cm$record_level_cm
+
+#print(cm_rl)
+
+# Display the original confusion matrix list
+
+cm_orig <- cm$confusion_matrix
+
+print(cm_orig)
+
+```
+MODEL PREDICTIONS WITH TEST SET
+
+```{r, ldapredictiontest, fig.width = 6, fig.height = 10, fig.alignment = 'center', echo = FALSE}
+
+# MODEL PREDCITIONS WITH TESTING SET
+
+lda_predict_test <- predict(model_lda, newdata = testing, type = "prob")
+
+#print(lda_predict_test)
+
+lda_predict_test <- predict(model_lda, newdata = testing, type = "raw")
+
+# PLOT PREDICTIONS
+
+plot(lda_predict_test,  col = c("blue", "violet", "green", "pink", "magenta"))
+
+```
+
+MODEL PREDICTIONS WITH TEST SET
+
+```{r, ldaprediction2, fig.width = 6, fi.height = 10, fig.alignment = 'center', echo = FALSE}
+
+# MODEL PREDCITIONS WITH TESTING SET
+
+lda_predict_test <- predict(model_lda, newdata = testing, type = "prob")
+
+#print(lda_predict_test)
+
+lda_predict_test <- predict(model_lda, newdata = testing, type = "raw")
+
+# PLOT PREDICTIONS
+
+plot(lda_predict_test,  col = c("blue", "violet", "green", "pink", "magenta"))
+
+
+```
+
+
+ROC CURVE 
+
+The roc curve indicates that a threshold value of 0.113, the number of correctly classified true 
+values, is almost equal to the number of correctly classified false values. The area under the 
+curve indicates that this model is fairly good at predicting true and false values, but this
+does not agree with the number of misclassification in the consfusion matrix.
+
+```{r, echo = FALSE}
+
+validation_lda <- predict(model_lda,validation,type="prob")
+
+rocobj <- roc(validation$classe, validation_lda[, 2])
+
+#create ROC plot
+
+ggroc(rocobj, colour = 'steelblue', linetype = 1, size = 1) +
+
+geom_segment(aes(x = 1, xend = 0, y = 0, yend = 1))
+
+```
+
+LDA2 MODEL
+
+The Kappa value increases with the number of discriminantt functions and the accuracy value increases with the number of discriminant functions
+
+
+```{r, lda2model, echo = FALSE}
+
+model_lda2 <- train(classe ~.,method="lda2",data=training2, trControl=ctrl, preProcess = c("center", "scale"), type = "raw")
+
+trellis.par.set(caretTheme())
+
+plot(model_lda2)
+
+trellis.par.set(caretTheme())
+
+plot(model_lda2, metric = "Kappa")
+
+```
+
+```{r, figlda2, fig.width = 6, fig.height = 10, fig.alignment = 'center', echo = FALSE}
+
+validation_lda2 <- predict(model_lda2, newdata = validation,type="raw")
+
+plot(validation_lda2,  col = c("blue", "violet", "green", "pink", "magenta"))
+
+
+```
+
+```{r, lda2val, echo= FALSE}
+
+validation_lda2 <- predict(model_lda2, newdata = validation,type="prob")
+
+# ROC curve
+
+auc <- multiclass.roc(validation$classe, validation_lda2, plot = FALSE, print.thres=TRUE, col="blue")
+
+#print(auc)
+
+rocobj <- roc(validation$classe, validation_lda2[, 2])
+
+#create ROC plot
+
+ggroc(rocobj, colour = 'steelblue', linetype = 1, size = 1) +
+
+geom_segment(aes(x = 1, xend = 0, y = 0, yend = 1))
+
+
+```
+
+
+```{r, predval, echo = FALSE, include = FALSE}
+
+# CONVERT DATA TO CREATE DATA FRAME FOR CONFUSION MATRIX
+
+validation_lda2 <- predict(model_lda2, newdata = validation,type="raw")
+
+validation_lda2 = data.frame(validation_lda2)
+
+str(validation_lda2)
+
+validation_class = as.factor(validation$classe)
+
+#print(head(validation$class))
+
+str(validation_class)
+
+validation_class = data.frame(validation_class)
+
+str(validation_class)
+
+
+```
+
+CONFUSION MATRIX AND STATISTICS 
+
+There are many missclassifications and the values of Kappa and Accuracy are small compared to the 
+same values for KNN. According to the values of precision and sensitivity, the model’s ability to 
+predict classes correctly is very low, and the values of prevalence e similar across all the 
+classes, which indicates that there are no imbalances in the data.
+
+
+```{r, lda2val2, echo = FALSE, include = FALSE}
+
+# CREATE DATA FRAME
+
+predictions <- cbind(validation_lda2, validation_class)
+
+#print(head(predictions))
+
+dim(predictions)
+
+names(predictions)
+
+str(predictions)
+
+
+# CONFUSION MATRIX
+
+cm <- ConfusionTableR::multi_class_cm(factor(predictions$validation_lda2), factor(predictions$validation_class))
+
+#print(cm)
+
+# Create the row level output
+
+cm_rl <- cm$record_level_cm
+
+#print(cm_rl)
+
+# Display the original confusion matrix list
+
+cm_orig <- cm$confusion_matrix
+
+print(cm_orig)
+
+```
+
+
+PREDICTIONS WITH TEST SET
+
+```{r, lda2fig,  fig.width = 6, fig.height = 10, fig.alignment = 'center', echo = FALSE}
+
+# MODEL PREDICTIONS WITH TESTING SET
+
+lda2_predict_test <- predict(model_lda2, newdata = testing, type = "prob")
+
+#print(lda2_predict_test)
+
+
+# MODEL PREDICTOINS WITH TESTING SET
+
+lda2_predict_test <- predict(model_lda2, newdata = testing, type = "raw")
+
+# PLOT PREDICTIONS
+
+plot(lda2_predict_test,  col = c("blue", "violet", "green", "pink", "magenta"))
+
+```
+
+
+THE BEST MODEL IS KNN BASED ON KAPPA AND ACCURACY
+
+
+```{r, alglist, fig.width = 10, fig.height = 10, fig.alignment = 'center', echo = FALSE}
+# COMPARE MOFDELS
+
+control <- trainControl(method="repeatedcv", number=10, repeats=5, savePredictions='final', classProbs=TRUE)
+
+algorithmList <- c('knn', 'lda2')
+
+set.seed(1234)
+
+models <- caretList(classe~., data=training2, trControl=control, methodList=algorithmList)
+
+results <- resamples(models)
+
+print(results)
+
+# PLOT RESULTS
+
+dotplot(results)
+
+```
+
+
+```{r, lda2fig2, fig.width = 8, fig.height = 10, fig.alignment = 'center', echo = FALSE}
+
+
+trctrl <- trainControl(method = "repeatedcv", number = 5, repeats = 3)
+
+set.seed(3233)
+
+
+svm_Linear <- train(classe ~., data = training2, method = "svmLinear",
+                   trControl=trctrl,
+                    preProcess = c("center", "scale"),
+                    tuneLength = 10,
+                    tuneGrid = expand.grid(C = seq(0.5, 1, length = 20)))
+
+
+
+print(svm_Linear)
+
+print(svm_Linear$bestTune)
+
+plot(svm_Linear)
+
+# CREATE DATA FRAME
+
+validation_linear <- predict(svm_Linear, newdata = validation,type="raw")
+
+
+# CONVERT DATA TO CREATE DATA FRAME FOR CONFUSION MATRIX
+
+validation_linear <- predict(svm_Linear, newdata = validation,type="raw", include = FALSE)
+
+validation_linear = data.frame(validation_linear)
+
+str(validation_linear)
+
+validation_class = as.factor(validation$classe)
+
+#print(head(validation$class))
+
+str(validation_class)
+
+validation_class = data.frame(validation_class)
+
+str(validation_class)
+
+predictions <- cbind(validation_linear, validation_class)
+
+# CONFUSION MATRIX
+
+
+cm <- ConfusionTableR::multi_class_cm(factor(predictions$validation_linear), factor(predictions$validation_class))
+
+#print(cm)
+
+# Create the row level output
+
+cm_rl <- cm$record_level_cm
+
+#print(cm_rl)
+
+# Display the original confusion matrix list
+
+cm_orig <- cm$confusion_matrix
+
+print(cm_orig)
+
+
+```
+
+```{r, radmodel, echo = FALSE}
+
+  trctrl <- trainControl(method = "repeatedcv", number = 5, repeats = 3)
+set.seed(3233)
+
+ 
+svm_Radial <- train(classe ~., data = training2, method = "svmRadial",
+                    trControl=trctrl,
+                    preProcess = c("center", "scale"),
+                    tuneLength = 10 #,
+                    #tuneGrid = expand.grid(C = seq(1, 5, length = 20), sigma = seq(1,5, length = 20))
+)
+
+print(svm_Radial)
+plot(svm_Radial)
+
+```
